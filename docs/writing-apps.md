@@ -122,12 +122,59 @@ be drawn.
 | `retoon.onSettings(fn)` | `fn()` is called after the user saved new settings; `retoon.settings` already has them |
 | `retoon.watch(ids, fn)` | Keep these entities up to date: Home Assistant entities, `mqtt.*` and the Toon's own `toon.*`. `fn(id)` is called when the state of one changes. A new call replaces the list |
 | `retoon.state(id)` | `{ state, value, unit, name, attributes }`, or `null` when unknown. `state` is the text, `value` the state as a number (`NaN` if it is not one), `unit` the unit or `null`, `name` the friendly name. Only entities in a `watch` list are kept up to date |
-| `retoon.fetch(url, opts)` | http or https. `opts`: `method`, `headers` (object), `body` (string), `timeout` (seconds, 1–120, default 30). A Promise of `{ status, text }`. It resolves for every HTTP status (check `status`) and rejects only when there was no answer. At most 4 MB |
+| `retoon.fetch(url, opts)` | http or https. `opts`: `method`, `headers` (object), `body` (string), `timeout` (seconds, 1–120, default 30), and for HTTP authentication `user`, `password` and `auth` (`"basic"`, `"digest"` or `"any"`, the default when a user is given). A Promise of `{ status, text, headers }` (`headers`: the answer's, names in lower case; level 4). It resolves for every HTTP status (check `status`) and rejects only when there was no answer. At most 4 MB |
 | `retoon.notify(msg, fn)` | Show a message on the Toon: a banner at the top, or a popup in the middle (see [Notifications](#notifications)). `fn(button)` is called with the label of the tapped button, or with `null` when the message was closed without one. Returns `false` when `msg` is not an object |
 | `retoon.sound(name, volume)` | Play `"beep"`, `"chime"` or a WAV file from the Toon's sound folder. `volume` 0–100 is optional (default: the Toon's sound setting) |
+| `retoon.publish(topic, payload, opts)` | Send an MQTT message on the Toon's own broker (see [MQTT](#mqtt-on-the-toon)). `payload`: a string, or anything else as JSON; `opts`: `{ retain }`. Returns `false` when the broker cannot be reached. Level 5 |
+| `retoon.subscribe(pattern, fn)` | `fn(topic, payload)` for every message on a topic that matches (`+` and `#` as in MQTT); `payload` is a string. Kept (retained) messages arrive right away. A second call with the same pattern replaces `fn`; at most 32 per app. Level 5 |
+| `retoon.unsubscribe(pattern)` | Stop that subscription. Level 5 |
 | `retoon.app` | `{ id, name, version }` |
 | `retoon.log(...)`, `console.log(...)` | Print to the screen program's output, see [trying-an-app.md](trying-an-app.md) |
 | `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval` | As in a browser |
+
+### MQTT on the Toon
+
+Every ReToon from 1.20 on has its own MQTT broker. The Toon puts its state
+there, each as one JSON object, kept (retained) so a new subscriber gets it
+at once:
+
+| Topic | What |
+|---|---|
+| `retoon/climate` | `temperature`, `humidity`, `illuminance` |
+| `retoon/voc` | the air-quality sensor: `index`, `quality` (`good`, `fair`, `moderate`, `poor`) and more (Toon 2) |
+| `retoon/boiler` | the thermostat and boiler: `hvac` (`heat`/`off`), `target`, `room`, `preset`, `heat` (1 while heating), `link`, `message` and more |
+| `retoon/display` | `{ "on": true, "brightness": 80 }` |
+| `retoon/notify/event` | a tap on a message on the screen |
+
+and takes commands:
+
+| Topic | Payload |
+|---|---|
+| `retoon/boiler/set` | `"target 20.5"`, `"hvac heat"`, `"hvac off"`, `"preset comfort"` (`home`, `sleep`, `away`), `"program resume"` |
+| `retoon/display/set` | `"ON"`, `"OFF"` or a brightness 0–100 |
+| `retoon/notify/set` | the JSON of `retoon.notify` |
+| `retoon/ui/set` | `"view 2"` (show that page) or `"wake"` |
+
+For data of its own an app uses topics under `app/<its id>/`, for example
+to share a value with another app. When the user opened the broker to the
+network, devices and scripts can use the same topics. Only command the
+thermostat when that is what the user set the app up for.
+
+```js
+let room = null;
+retoon.subscribe("retoon/boiler", (topic, payload) => {
+	room = JSON.parse(payload).room;
+	retoon.update();
+});
+retoon.tile(el => {
+	el.text(room === null ? "-" : room.toFixed(1) + " °C", { font: "mid" });
+	// a button that sets the thermostat
+	el.button("21 °C", { x: 0, y: 60 }, () => retoon.publish("retoon/boiler/set", "target 21"));
+});
+```
+
+A retained message lasts until the Toon restarts. An app also receives the
+messages it sends itself when it subscribed to their topic.
 
 ### Notifications
 
@@ -177,8 +224,9 @@ Positions are in pixels of the screen as if it is 1024 wide; on a Toon 1
 | `el.circle(opts)` | `x`, `y` are the centre, `r` the radius |
 | `el.line([x1, y1, x2, y2, ...], opts)` | A line through these points (at least two); `width` (default 2), `color`, `opacity` |
 | `el.flow(opts)` | Dots moving from `x1, y1` to `x2, y2` by themselves; `speed` in pixels a second (below 0 the other way, 0 still), `gap` (30), `size` (8), `color` |
+| `el.time(opts, fn)` | A time picker: an hour wheel and a minute wheel the user scrolls. `value` (`"HH:MM"`), `step` (minutes between the minute wheel's entries, a divisor of 60, default 1), `rows` (visible rows, 1–7, default 3), `font`. `fn("HH:MM")` is called after the user turns a wheel |
 | `el.onClick(fn)` | `fn()` when it is tapped |
-| `el.set(opts)` | Change something already drawn: its options, a text's `text`, a flow's `speed` or `color` |
+| `el.set(opts)` | Change something already drawn: its options, a text's `text`, a flow's `speed` or `color`, a time picker's `value` (without calling its `fn`) |
 
 Options:
 
@@ -244,6 +292,8 @@ start it.
 | 1 | `retoon.tile`, `screen`, `update`, `settings`, `onSettings`, `fetch`, `app`, `log`, timers; `el.box`, `text`, `button`, `onClick`, `width`, `height` |
 | 2 | `retoon.watch`, `retoon.state`; `el.icon`, `el.circle`, `el.line`, `el.flow`, `el.set` |
 | 3 | `retoon.notify`, `retoon.sound` (ReToon 1.15 and later) |
+| 4 | `retoon.fetch` with `user`/`password`/`auth` and an answer `headers`; `el.time` (ReToon 1.19 and later) |
+| 5 | `retoon.publish`, `retoon.subscribe`, `retoon.unsubscribe`: MQTT on the Toon's own broker (ReToon 1.20 and later) |
 
 ## Trying it, and publishing it
 

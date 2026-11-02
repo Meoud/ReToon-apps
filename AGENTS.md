@@ -35,7 +35,8 @@ and [powerflow](powerflow) (Home Assistant entities, moving dots).
    with missing settings (tell the user what to set under Apps in the web
    interface). `retoon.state()` returns `null` for an unknown entity.
 7. No state survives a restart of the screen. There is no storage; settings
-   are only written by the web interface.
+   are only written by the web interface. (A retained MQTT message, level 5,
+   lasts until the Toon restarts.)
 8. Text has no emoji: the font has letters and common symbols only. Icons
    come from `el.icon("mdi:...")`.
 9. Raise `"version"` with every change. Set `"api"` to the lowest level that
@@ -87,10 +88,14 @@ retoon.watch(ids, fn)      follow these entity ids; fn(id) on each state change;
 retoon.state(id)           { state, value, unit, name, attributes } | null
                            state: string; value: number or NaN; unit: string | null;
                            name: friendly name; attributes: object (as in Home Assistant)
-retoon.fetch(url, opts)    Promise<{ status, text }>; opts: { method, headers, body, timeout }
+retoon.fetch(url, opts)    Promise<{ status, text, headers }>; opts: { method, headers,
+                           body, timeout, user, password, auth }
                            http/https; body is a string; timeout in s (1-120, default 30);
+                           user/password do HTTP authentication, auth is "basic", "digest" or
+                           "any" (the default when a user is given); the answer's headers are in
+                           headers with names in lower case (both level 4);
                            resolves for every HTTP status, rejects only without an answer;
-                           text only (no binary), at most 4 MB; no response headers
+                           text only (no binary), at most 4 MB
 retoon.notify(msg, fn)     banner at the top or popup in the middle; msg: { title, message,
                            level: "info"|"warning"|"alert", icon: "mdi:x", style: "banner"|"popup",
                            timeout: s (0 = until tapped), buttons: [up to 3 labels], sound:
@@ -98,6 +103,17 @@ retoon.notify(msg, fn)     banner at the top or popup in the middle; msg: { titl
                            wake }; fn(label) after a button, fn(null) when closed without one.
                            Same tag = replaces the old message. Returns false if msg is no object
 retoon.sound(name, volume) "beep" | "chime" | wav name; volume 0-100 optional
+retoon.publish(topic, payload, opts)
+                           MQTT message on the Toon's own broker (level 5); payload a
+                           string, or anything else as JSON; opts: { retain }; null
+                           payload with retain removes a kept message; no + or # in
+                           the topic; returns false if the broker cannot be reached
+retoon.subscribe(pattern, fn)
+                           fn(topic, payload) for every message on a matching topic
+                           (+ and # wildcards; payload is a string, JSON.parse it
+                           yourself); kept (retained) messages arrive right away;
+                           again with the same pattern replaces fn; at most 32 (level 5)
+retoon.unsubscribe(pattern)
 retoon.app                 { id, name, version }
 retoon.log(...args)        log line "app <id>: ..." (console.log is the same)
 setTimeout, setInterval, clearTimeout, clearInterval
@@ -114,6 +130,18 @@ Home Assistant: `toon.temperature`, `toon.humidity`, `toon.illuminance`,
 `toon.wifi`. Apps can read
 states but cannot call Home Assistant services. `retoon.state` of an entity
 that is not in a `watch` list may be missing or stale: watch what you show.
+
+The Toon's own MQTT broker (level 5) carries the Toon's state as retained
+JSON: `retoon/climate`, `retoon/voc`, `retoon/boiler` (fields such as
+`hvac`, `target`, `room`, `preset`, `heat`), `retoon/display`; and takes
+commands: `retoon/boiler/set` with `"target 20.5"`, `"hvac heat"`,
+`"hvac off"`, `"preset comfort"` (`home`, `sleep`, `away`) or
+`"program resume"`; `retoon/display/set` with `"ON"`, `"OFF"` or 0-100;
+`retoon/notify/set` with the JSON of `retoon.notify`; `retoon/ui/set` with
+`"view 2"` or `"wake"`. For data of its own, an app uses topics under
+`app/<its id>/`. Devices on the network can use the same broker when the
+user opened it to the network. Only command the thermostat when that is what
+the user set the app up to do.
 
 ### Drawing
 
@@ -133,9 +161,13 @@ el.circle(opts)                      opts.x, opts.y = centre, opts.r = radius
 el.line([x1, y1, x2, y2, ...], opts) polyline, at least 2 points (4 numbers); opts.width (2)
 el.flow(opts)                        dots moving x1,y1 -> x2,y2 by themselves; opts.speed px/s
                                      (negative: the other way, 0: still), gap (30), size (8)
+el.time(opts, fn)                    time picker (hour + minute wheels); opts.value "HH:MM",
+                                     step (minutes, a divisor of 60; default 1), rows (1-7,
+                                     default 3), font; fn("HH:MM") after a wheel is turned
 el.onClick(fn)                       fn() when tapped
 el.set(opts)                         change in place: any option, a text's { text },
-                                     a flow's { speed, color }; cheap, no redraw of the rest
+                                     a flow's { speed, color }, a time picker's { value }
+                                     (no fn call); cheap, no redraw of the rest
 ```
 
 Options: `x`, `y`, `w`, `h`; `align` (`top-left`, `top-mid`, `top-right`,
@@ -158,6 +190,11 @@ cards are dark grey (`card`).
   `el.flow`, `el.set`.
 - 3 (ReToon 1.15): adds `retoon.notify`, `retoon.sound`. Use a `tag` for
   messages that can repeat, and sounds only for what needs attention.
+- 4 (ReToon 1.19): `retoon.fetch` gains `user`, `password` and `auth` for HTTP
+  authentication (basic/digest), and returns the answer's `headers`; `el.time`
+  adds a time picker.
+- 5 (ReToon 1.20): `retoon.publish`, `retoon.subscribe`, `retoon.unsubscribe`
+  (MQTT on the Toon's own broker).
 
 ## The shape of an app
 
