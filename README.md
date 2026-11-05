@@ -8,6 +8,7 @@ and optionally a full screen that opens when the card is tapped.
 |---|---|
 | [spotenergy](spotenergy) | Dynamic electricity prices for the Netherlands, with taxes, as a card and a full-screen graph |
 | [powerflow](powerflow) | Where the power in your home comes from and goes to, with moving dots |
+| [trash-calendar](trash-calendar) | Next trash pickups from an ICS calendar, with a reminder the evening before |
 
 ## Installing an app
 
