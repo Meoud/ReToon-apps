@@ -1,0 +1,17 @@
+{
+	"id": "trash-calendar",
+	"name": "Trash calendar",
+	"version": "1.0.0",
+	"api": 3,
+	"main": "main.js",
+	"description": "Shows the next trash pickups from an ICS calendar link and reminds you the evening before. The link must work without logging in or cookies; if your waste company's link doesn't, host a copy of the file yourself, for example in Home Assistant's www folder.",
+	"author": "Migeo",
+	"tile": { "height": 150 },
+	"settings": [
+		{ "key": "url", "label": "Calendar link (ICS, https://)", "type": "text", "default": "" },
+		{ "key": "title", "label": "Title", "type": "text", "default": "Afval" },
+		{ "key": "dutch", "label": "Dutch day names", "type": "bool", "default": true },
+		{ "key": "remind", "label": "Remind the evening before", "type": "bool", "default": true },
+		{ "key": "hour", "label": "Reminder hour (0-23)", "type": "number", "default": 19 }
+	]
+}
